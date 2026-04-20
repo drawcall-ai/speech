@@ -1,0 +1,17 @@
+name = "speech"
+account_id = "f9603af4549c04d25bdbbc04fd5ea112"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["global_fetch_strictly_public"]
+
+[[routes]]
+pattern = "v1.speech.drawcall.ai/*"
+zone_name = "drawcall.ai"
+
+[[r2_buckets]]
+binding = "TTS_CACHE"
+bucket_name = "speech-tts-cache"
+preview_bucket_name = "speech-tts-cache"
+
+[observability]
+enabled = true
