@@ -4,21 +4,25 @@ type Env = { TTS_CACHE: R2Bucket; FAL_API_KEY: string };
 
 const MODEL_URL = "https://fal.run/fal-ai/elevenlabs/tts/turbo-v2.5";
 const MAX_TEXT = 1000;
+const MAX_VOICE = 100;
+const DEFAULT_VOICE = "Rachel";
 const YEAR = 31536000;
 
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/", async (c) => {
   const text = c.req.query("text")?.trim();
+  const voice = c.req.query("voice")?.trim() || DEFAULT_VOICE;
   if (!text) return c.text("missing ?text", 400);
   if (text.length > MAX_TEXT) return c.text(`text exceeds ${MAX_TEXT} chars`, 400);
+  if (voice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
 
   if (c.req.header("x-internal-gen")) {
-    const { bytes, contentType } = await callFal(text, c.env.FAL_API_KEY);
+    const { bytes, contentType } = await callFal({ text, voice }, c.env.FAL_API_KEY);
     return audio(bytes, contentType, "MISS", true);
   }
 
-  const key = await sha256Hex(text);
+  const key = await sha256Hex(JSON.stringify({ v: 2, text, voice }));
   const hit = await c.env.TTS_CACHE.get(key);
   if (hit) return audio(hit.body, hit.httpMetadata?.contentType, "HIT-R2");
 
@@ -37,11 +41,11 @@ app.get("/", async (c) => {
   return audio(buf, ct, status);
 });
 
-async function callFal(text: string, key: string) {
+async function callFal(input: { text: string; voice: string }, key: string) {
   const res = await fetch(MODEL_URL, {
     method: "POST",
     headers: { authorization: `Key ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(input),
   });
   if (!res.ok) throw new HTTPError(502, `fal: ${res.status} ${await res.text()}`);
   const json = (await res.json()) as { audio: { url: string; content_type?: string } };
