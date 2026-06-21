@@ -1,9 +1,11 @@
 ---
 name: speech
-description: Use the Drawcall Speech API from apps, websites, and 3D experiences. Use when explaining or showcasing text-to-speech usage with https://v1.speech.drawcall.ai, including simple HTML audio, JavaScript audio loading, Three.js positional audio, voice selection, browser autoplay constraints, URL encoding, caching behavior, and limits.
+description: Use the Drawcall Speech API from apps, websites, and 3D experiences. Use when explaining or showcasing text-to-speech usage with https://v1.speech.drawcall.ai, including simple HTML audio, JavaScript audio loading, voice selection, browser autoplay constraints, URL encoding, caching behavior, and first-request warmup.
 ---
 
 # Speech
+
+Use Drawcall Speech for spoken output: NPC dialogue, narration, tutorial voice, accessibility readouts, and UI voice lines. It turns text into an audio clip URL that an app can load and play.
 
 ## Endpoint
 
@@ -18,6 +20,14 @@ GET https://v1.speech.drawcall.ai/?text=Hello+world&voice=Aria
 - Response: audio file, usually `audio/mpeg`.
 - Cache: generated clips are cached by text and voice; reuse identical URLs for repeatable playback.
 - Errors: plain text `400` for invalid input, `502` for generation failures.
+
+## First Request Delay
+
+The first time a specific `text` and `voice` combination is requested, the endpoint has to generate the clip before it can serve it. That short delay can corrupt in-app behavior if a test expects instant playback, animation sync, or deterministic timing.
+
+If that matters, warm the cache before testing by calling the endpoint once for each needed line and voice. Later requests for the same text and voice are cached and should be instant.
+
+For tighter control, download and store the audio files locally, then serve them from the app. A good middle ground is a small speech script that predownloads every line while keeping the voice line text in one source file, so changing a line remains a single source change.
 
 ## Examples
 
