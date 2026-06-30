@@ -4,9 +4,10 @@ type Env = { TTS_CACHE: R2Bucket; OPENROUTER_API_KEY: string };
 
 const MODEL = "google/gemini-3.1-flash-tts-preview";
 const OPENROUTER_SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 const OPENROUTER_ATTEMPTS = 3;
 const MAX_TEXT = 1000;
+const MAX_PROMPT = 1000;
 const MAX_VOICE = 100;
 const DEFAULT_VOICE = "Zephyr";
 const YEAR = 31536000;
@@ -15,26 +16,33 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/", async (c) => {
   const text = c.req.query("text")?.trim();
+  const prompt = c.req.query("prompt")?.trim();
   const voice = c.req.query("voice")?.trim() || DEFAULT_VOICE;
   if (!text) return c.text("missing ?text", 400);
   if (text.length > MAX_TEXT) return c.text(`text exceeds ${MAX_TEXT} chars`, 400);
+  if (prompt && prompt.length > MAX_PROMPT) {
+    return c.text(`prompt exceeds ${MAX_PROMPT} chars`, 400);
+  }
   if (voice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
 
   const key = await sha256Hex(
-    JSON.stringify({ v: CACHE_VERSION, model: MODEL, text, voice }),
+    JSON.stringify({ v: CACHE_VERSION, model: MODEL, prompt, text, voice }),
   );
   const hit = await c.env.TTS_CACHE.get(key);
   if (hit) return audio(hit.body, hit.httpMetadata?.contentType, "HIT-R2");
 
   const { bytes, contentType } = await callOpenRouter(
-    { text, voice },
+    { prompt, text, voice },
     c.env.OPENROUTER_API_KEY,
   );
   await c.env.TTS_CACHE.put(key, bytes, { httpMetadata: { contentType } });
   return audio(bytes, contentType, "MISS");
 });
 
-async function callOpenRouter(input: { text: string; voice: string }, key: string) {
+async function callOpenRouter(
+  input: { prompt: string | undefined; text: string; voice: string },
+  key: string,
+) {
   for (let attempt = 1; attempt <= OPENROUTER_ATTEMPTS; attempt += 1) {
     const res = await fetch(OPENROUTER_SPEECH_URL, {
       method: "POST",
@@ -44,7 +52,7 @@ async function callOpenRouter(input: { text: string; voice: string }, key: strin
       },
       body: JSON.stringify({
         model: MODEL,
-        input: speechPrompt(input.text),
+        input: speechPrompt(input.text, input.prompt),
         voice: input.voice,
         response_format: "pcm",
       }),
@@ -113,8 +121,18 @@ function hasAudioData(buffer: ArrayBuffer) {
   return bytes.some((byte) => byte !== 0);
 }
 
-function speechPrompt(text: string) {
-  return `Read this text aloud exactly: ${JSON.stringify(text)}`;
+function speechPrompt(text: string, prompt: string | undefined) {
+  const transcript = JSON.stringify(text);
+  if (!prompt) return `TTS the following transcript exactly.\n\nTranscript: ${transcript}`;
+
+  return [
+    "TTS the following transcript.",
+    "Follow the performance notes without reading the notes aloud.",
+    "",
+    `Performance notes: ${prompt}`,
+    "",
+    `Transcript: ${transcript}`,
+  ].join("\n");
 }
 
 function audioParam(contentType: string | null, name: string) {
