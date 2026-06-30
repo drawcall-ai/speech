@@ -1,6 +1,6 @@
 ---
 name: speech
-description: Use the Drawcall Speech API from apps, websites, and 3D experiences. Use when explaining or showcasing text-to-speech usage with https://v1.speech.drawcall.ai, including simple HTML audio, JavaScript audio loading, voice selection, performance prompting, browser autoplay constraints, URL encoding, caching behavior, and first-request warmup.
+description: Use the Drawcall Speech API from apps, websites, and 3D experiences. Use when explaining or showcasing text-to-speech usage with https://v1.speech.drawcall.ai, including simple HTML audio, JavaScript audio loading, voice selection, style control, browser autoplay constraints, URL encoding, caching behavior, and first-request warmup.
 ---
 
 # Speech
@@ -16,33 +16,35 @@ GET https://v1.speech.drawcall.ai/?text=Hello+world&voice=Zephyr
 ```
 
 - `text`: required, URL-encoded, trimmed, max 1000 chars.
-- `prompt`: optional, URL-encoded, trimmed, max 1000 chars. Use it for delivery instructions such as tone, emotion, accent, pace, and pauses.
+- `style`: optional, URL-encoded, trimmed, max 1000 chars. Use it for delivery instructions such as tone, emotion, accent, pace, and pauses.
 - `voice`: optional, URL-encoded, defaults to `Zephyr`.
 - Response: audio file, usually `audio/wav`.
-- Cache: generated clips are cached by text, prompt, and voice; reuse identical URLs for repeatable playback.
+- Cache: generated clips are cached by text, style, and voice; reuse identical URLs for repeatable playback.
 - Errors: plain text `400` for invalid input, `502` for generation failures.
 
-## Performance Prompt
+## Style
 
-Gemini TTS responds to natural-language performance instructions. Keep the words to speak in `text`, and put delivery notes in `prompt` when the line needs style control. This keeps the transcript stable while allowing the model to shape tone, emotion, accent, pace, or pauses.
+Use `text`, `voice`, and `style` as the stable API shape. This follows the common TTS split: transcript text is separate from voice selection and delivery control. `style` is Drawcall Speech's public name for natural-language delivery instructions; it maps well to Gemini style prompts and Azure-style SSML naming without exposing model prompt mechanics.
 
-Good prompt uses:
+Keep the words to speak in `text`, and put delivery notes in `style` when the line needs tone, emotion, accent, pace, or pauses. Style is best-effort rather than sample-accurate timing; for exact timing, pre-generate and edit audio assets.
+
+Good style values:
 
 - `Say warmly and excitedly, with a long pause after the first sentence.`
 - `Read this as a spooky whisper, slowly, with a nervous laugh near the end.`
 - `Use a calm British narrator tone and leave a short pause between clauses.`
 
-Inline stage directions in `text` can also work for local moments such as `[whispers]`, `[sighs]`, `[laughs]`, `[excitedly]`, or `[very slow]`. Use them sparingly; broad direction belongs in `prompt` so it is not mistaken for dialogue.
+Inline stage directions in `text` can also work for local moments such as `[whispers]`, `[sighs]`, `[laughs]`, `[excitedly]`, or `[very slow]`. Use them sparingly; broad direction belongs in `style` so it is not mistaken for dialogue.
 
 ```text
-GET https://v1.speech.drawcall.ai/?text=Hello+from+Drawcall.+Now+we+continue.&voice=Puck&prompt=Say+warmly+and+excitedly,+with+a+long+dramatic+pause+after+the+first+sentence.
+GET https://v1.speech.drawcall.ai/?text=Hello+from+Drawcall.+Now+we+continue.&voice=Puck&style=Say+warmly+and+excitedly,+with+a+long+dramatic+pause+after+the+first+sentence.
 ```
 
 ## First Request Delay
 
-The first time a specific `text`, `prompt`, and `voice` combination is requested, the endpoint has to generate the clip before it can serve it. That short delay can corrupt in-app behavior if a test expects instant playback, animation sync, or deterministic timing.
+The first time a specific `text`, `style`, and `voice` combination is requested, the endpoint has to generate the clip before it can serve it. That short delay can corrupt in-app behavior if a test expects instant playback, animation sync, or deterministic timing.
 
-If that matters, warm the cache before testing by calling the endpoint once for each needed line, prompt, and voice. Later requests for the same URL are cached and should be instant.
+If that matters, warm the cache before testing by calling the endpoint once for each needed line, style, and voice. Later requests for the same URL are cached and should be instant.
 
 For tighter control, download and store the audio files locally, then serve them from the app. A good middle ground is a small speech script that predownloads every line while keeping the voice line text in one source file, so changing a line remains a single source change.
 

@@ -4,10 +4,10 @@ type Env = { TTS_CACHE: R2Bucket; OPENROUTER_API_KEY: string };
 
 const MODEL = "google/gemini-3.1-flash-tts-preview";
 const OPENROUTER_SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
-const CACHE_VERSION = 6;
+const CACHE_VERSION = 7;
 const OPENROUTER_ATTEMPTS = 3;
 const MAX_TEXT = 1000;
-const MAX_PROMPT = 1000;
+const MAX_STYLE = 1000;
 const MAX_VOICE = 100;
 const DEFAULT_VOICE = "Zephyr";
 const YEAR = 31536000;
@@ -16,23 +16,29 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/", async (c) => {
   const text = c.req.query("text")?.trim();
-  const prompt = c.req.query("prompt")?.trim();
+  const style = c.req.query("style")?.trim();
+  const legacyPrompt = c.req.query("prompt")?.trim();
   const voice = c.req.query("voice")?.trim() || DEFAULT_VOICE;
   if (!text) return c.text("missing ?text", 400);
   if (text.length > MAX_TEXT) return c.text(`text exceeds ${MAX_TEXT} chars`, 400);
-  if (prompt && prompt.length > MAX_PROMPT) {
-    return c.text(`prompt exceeds ${MAX_PROMPT} chars`, 400);
+  if (style && legacyPrompt && style !== legacyPrompt) {
+    return c.text("use either ?style or ?prompt, not both", 400);
+  }
+
+  const speechStyle = style || legacyPrompt;
+  if (speechStyle && speechStyle.length > MAX_STYLE) {
+    return c.text(`style exceeds ${MAX_STYLE} chars`, 400);
   }
   if (voice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
 
   const key = await sha256Hex(
-    JSON.stringify({ v: CACHE_VERSION, model: MODEL, prompt, text, voice }),
+    JSON.stringify({ v: CACHE_VERSION, model: MODEL, style: speechStyle, text, voice }),
   );
   const hit = await c.env.TTS_CACHE.get(key);
   if (hit) return audio(hit.body, hit.httpMetadata?.contentType, "HIT-R2");
 
   const { bytes, contentType } = await callOpenRouter(
-    { prompt, text, voice },
+    { style: speechStyle, text, voice },
     c.env.OPENROUTER_API_KEY,
   );
   await c.env.TTS_CACHE.put(key, bytes, { httpMetadata: { contentType } });
@@ -40,7 +46,7 @@ app.get("/", async (c) => {
 });
 
 async function callOpenRouter(
-  input: { prompt: string | undefined; text: string; voice: string },
+  input: { style: string | undefined; text: string; voice: string },
   key: string,
 ) {
   for (let attempt = 1; attempt <= OPENROUTER_ATTEMPTS; attempt += 1) {
@@ -52,7 +58,7 @@ async function callOpenRouter(
       },
       body: JSON.stringify({
         model: MODEL,
-        input: speechPrompt(input.text, input.prompt),
+        input: speechInput(input.text, input.style),
         voice: input.voice,
         response_format: "pcm",
       }),
@@ -121,15 +127,15 @@ function hasAudioData(buffer: ArrayBuffer) {
   return bytes.some((byte) => byte !== 0);
 }
 
-function speechPrompt(text: string, prompt: string | undefined) {
+function speechInput(text: string, style: string | undefined) {
   const transcript = JSON.stringify(text);
-  if (!prompt) return `TTS the following transcript exactly.\n\nTranscript: ${transcript}`;
+  if (!style) return `TTS the following transcript exactly.\n\nTranscript: ${transcript}`;
 
   return [
     "TTS the following transcript.",
-    "Follow the performance notes without reading the notes aloud.",
+    "Follow the style notes without reading the notes aloud.",
     "",
-    `Performance notes: ${prompt}`,
+    `Style notes: ${style}`,
     "",
     `Transcript: ${transcript}`,
   ].join("\n");

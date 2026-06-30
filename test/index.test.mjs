@@ -45,7 +45,7 @@ test("retries empty OpenRouter audio and caches only the valid WAV", async () =>
   }
 });
 
-test("passes performance prompt separately from transcript", async () => {
+test("passes style separately from transcript", async () => {
   const cache = new FakeR2Bucket();
   const fetches = [];
   const originalFetch = globalThis.fetch;
@@ -60,7 +60,7 @@ test("passes performance prompt separately from transcript", async () => {
   try {
     const res = await app.fetch(
       new Request(
-        "https://example.test/?text=hello&voice=Puck&prompt=Say%20warmly%20with%20a%20pause",
+        "https://example.test/?text=hello&voice=Puck&style=Say%20warmly%20with%20a%20pause",
       ),
       { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
     );
@@ -70,9 +70,9 @@ test("passes performance prompt separately from transcript", async () => {
       JSON.parse(fetches[0].init.body).input,
       [
         "TTS the following transcript.",
-        "Follow the performance notes without reading the notes aloud.",
+        "Follow the style notes without reading the notes aloud.",
         "",
-        "Performance notes: Say warmly with a pause",
+        "Style notes: Say warmly with a pause",
         "",
         'Transcript: "hello"',
       ].join("\n"),
@@ -80,6 +80,45 @@ test("passes performance prompt separately from transcript", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("accepts prompt as a legacy alias for style", async () => {
+  const cache = new FakeR2Bucket();
+  const fetches = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, init) => {
+    fetches.push({ url, init });
+    return new Response(samplePcm(), {
+      headers: { "content-type": "audio/pcm;rate=24000;channels=1" },
+    });
+  };
+
+  try {
+    const res = await app.fetch(
+      new Request("https://example.test/?text=hello&voice=Puck&prompt=Say%20warmly"),
+      { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
+    );
+
+    assert.equal(res.status, 200);
+    assert.match(JSON.parse(fetches[0].init.body).input, /Style notes: Say warmly/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects conflicting style and prompt params", async () => {
+  const cache = new FakeR2Bucket();
+  const res = await app.fetch(
+    new Request(
+      "https://example.test/?text=hello&style=Say%20warmly&prompt=Say%20sadly",
+    ),
+    { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
+  );
+
+  assert.equal(res.status, 400);
+  assert.equal(await res.text(), "use either ?style or ?prompt, not both");
+  assert.equal(cache.objects.size, 0);
 });
 
 test("does not cache empty OpenRouter audio", async () => {
