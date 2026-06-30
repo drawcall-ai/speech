@@ -4,6 +4,8 @@ type Env = { TTS_CACHE: R2Bucket; OPENROUTER_API_KEY: string };
 
 const MODEL = "google/gemini-3.1-flash-tts-preview";
 const OPENROUTER_SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
+const CACHE_VERSION = 5;
+const OPENROUTER_ATTEMPTS = 3;
 const MAX_TEXT = 1000;
 const MAX_VOICE = 100;
 const DEFAULT_VOICE = "Zephyr";
@@ -18,7 +20,9 @@ app.get("/", async (c) => {
   if (text.length > MAX_TEXT) return c.text(`text exceeds ${MAX_TEXT} chars`, 400);
   if (voice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
 
-  const key = await sha256Hex(JSON.stringify({ v: 3, model: MODEL, text, voice }));
+  const key = await sha256Hex(
+    JSON.stringify({ v: CACHE_VERSION, model: MODEL, text, voice }),
+  );
   const hit = await c.env.TTS_CACHE.get(key);
   if (hit) return audio(hit.body, hit.httpMetadata?.contentType, "HIT-R2");
 
@@ -31,34 +35,44 @@ app.get("/", async (c) => {
 });
 
 async function callOpenRouter(input: { text: string; voice: string }, key: string) {
-  const res = await fetch(OPENROUTER_SPEECH_URL, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${key}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      input: input.text,
-      voice: input.voice,
-      response_format: "pcm",
-    }),
-  });
+  for (let attempt = 1; attempt <= OPENROUTER_ATTEMPTS; attempt += 1) {
+    const res = await fetch(OPENROUTER_SPEECH_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        input: speechPrompt(input.text),
+        voice: input.voice,
+        response_format: "pcm",
+      }),
+    });
 
-  if (!res.ok) {
-    throw new HTTPError(502, `openrouter: ${res.status} ${await res.text()}`);
+    if (!res.ok) {
+      throw new HTTPError(502, `openrouter: ${res.status} ${await res.text()}`);
+    }
+
+    const contentType = res.headers.get("content-type");
+    if (!contentType?.startsWith("audio/pcm")) {
+      throw new HTTPError(502, `openrouter: unexpected content-type ${contentType}`);
+    }
+
+    const pcm = await res.arrayBuffer();
+    if (hasAudioData(pcm)) {
+      return {
+        bytes: wavFromPcm(pcm, {
+          channels: audioParam(contentType, "channels") ?? 1,
+          sampleRate: audioParam(contentType, "rate") ?? 24000,
+          sampleWidth: 2,
+        }),
+        contentType: "audio/wav",
+      };
+    }
   }
 
-  const contentType = res.headers.get("content-type");
-  const pcm = await res.arrayBuffer();
-  return {
-    bytes: wavFromPcm(pcm, {
-      channels: audioParam(contentType, "channels") ?? 1,
-      sampleRate: audioParam(contentType, "rate") ?? 24000,
-      sampleWidth: 2,
-    }),
-    contentType: "audio/wav",
-  };
+  throw new HTTPError(502, "openrouter: empty audio response");
 }
 
 function wavFromPcm(
@@ -94,6 +108,15 @@ function writeAscii(view: DataView, offset: number, value: string) {
   }
 }
 
+function hasAudioData(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  return bytes.some((byte) => byte !== 0);
+}
+
+function speechPrompt(text: string) {
+  return `Read this text aloud exactly: ${JSON.stringify(text)}`;
+}
+
 function audioParam(contentType: string | null, name: string) {
   const param = contentType
     ?.split(";")
@@ -126,8 +149,11 @@ async function sha256Hex(s: string) {
 }
 
 class HTTPError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
 
