@@ -12,12 +12,12 @@ Use Drawcall Speech for spoken output: NPC dialogue, narration, tutorial voice, 
 Drawcall Speech turns text into an audio URL.
 
 ```text
-GET https://v1.speech.drawcall.ai/?text=Hello+world&voice=Aria
+GET https://v1.speech.drawcall.ai/?text=Hello+world&voice=Zephyr
 ```
 
 - `text`: required, URL-encoded, trimmed, max 1000 chars.
-- `voice`: optional, URL-encoded, defaults to `Rachel`.
-- Response: audio file, usually `audio/mpeg`.
+- `voice`: optional, URL-encoded, defaults to `Zephyr`.
+- Response: audio file, usually `audio/wav`.
 - Cache: generated clips are cached by text and voice; reuse identical URLs for repeatable playback.
 - Errors: plain text `400` for invalid input, `502` for generation failures.
 
@@ -36,7 +36,7 @@ HTML audio:
 ```html
 <audio
   controls
-  src="https://v1.speech.drawcall.ai/?text=Welcome+to+Drawcall&voice=Aria"
+  src="https://v1.speech.drawcall.ai/?text=Welcome+to+Drawcall&voice=Zephyr"
 ></audio>
 ```
 
@@ -58,7 +58,7 @@ audio.setRolloffFactor(1.5);
 speaker.add(audio);
 
 const text = encodeURIComponent("I am speaking from over here.");
-const voice = encodeURIComponent("Roger");
+const voice = encodeURIComponent("Puck");
 new THREE.AudioLoader().load(
   `https://v1.speech.drawcall.ai/?text=${text}&voice=${voice}`,
   (buffer) => {
@@ -71,6 +71,6 @@ new THREE.AudioLoader().load(
 
 ## Voice
 
-Known voices include `Rachel`, `Aria`, `Roger`, `Sarah`, `Laura`, `Charlie`, `George`, `Callum`, `River`, `Liam`, `Charlotte`, `Alice`, `Matilda`, `Will`, `Jessica`, `Eric`, `Chris`, `Brian`, `Daniel`, `Lily`, and `Bill`.
+Known voices include `Zephyr`, `Puck`, `Charon`, `Kore`, `Fenrir`, `Leda`, `Orus`, `Aoede`, `Callirrhoe`, `Autonoe`, `Enceladus`, `Iapetus`, `Umbriel`, `Algieba`, `Despina`, `Erinome`, `Algenib`, `Rasalgethi`, `Laomedeia`, `Achernar`, `Alnilam`, `Schedar`, `Gacrux`, `Pulcherrima`, `Achird`, `Zubenelgenubi`, `Vindemiatrix`, `Sadachbia`, `Sadaltager`, and `Sulafat`.
 
 Browsers usually require a click/tap before audio can play. In UI, start playback from a user gesture and resume the audio context first if needed.

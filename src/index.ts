@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 
-type Env = { TTS_CACHE: R2Bucket; FAL_API_KEY: string };
+type Env = { TTS_CACHE: R2Bucket; OPENROUTER_API_KEY: string };
 
-const MODEL_URL = "https://fal.run/fal-ai/elevenlabs/tts/turbo-v2.5";
+const MODEL = "google/gemini-3.1-flash-tts-preview";
+const OPENROUTER_SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
 const MAX_TEXT = 1000;
 const MAX_VOICE = 100;
-const DEFAULT_VOICE = "Rachel";
+const DEFAULT_VOICE = "Zephyr";
 const YEAR = 31536000;
 
 const app = new Hono<{ Bindings: Env }>();
@@ -17,44 +18,91 @@ app.get("/", async (c) => {
   if (text.length > MAX_TEXT) return c.text(`text exceeds ${MAX_TEXT} chars`, 400);
   if (voice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
 
-  if (c.req.header("x-internal-gen")) {
-    const { bytes, contentType } = await callFal({ text, voice }, c.env.FAL_API_KEY);
-    return audio(bytes, contentType, "MISS", true);
-  }
-
-  const key = await sha256Hex(JSON.stringify({ v: 2, text, voice }));
+  const key = await sha256Hex(JSON.stringify({ v: 3, model: MODEL, text, voice }));
   const hit = await c.env.TTS_CACHE.get(key);
   if (hit) return audio(hit.body, hit.httpMetadata?.contentType, "HIT-R2");
 
-  const sub = await fetch(c.req.url, {
-    headers: { "x-internal-gen": "1" },
-    cf: { cacheEverything: true, cacheTtl: YEAR },
-  });
-  if (!sub.ok) return c.text(await sub.text(), 502);
-
-  const buf = await sub.arrayBuffer();
-  const ct = sub.headers.get("content-type") ?? "audio/mpeg";
-  c.executionCtx.waitUntil(
-    c.env.TTS_CACHE.put(key, buf, { httpMetadata: { contentType: ct } }),
+  const { bytes, contentType } = await callOpenRouter(
+    { text, voice },
+    c.env.OPENROUTER_API_KEY,
   );
-  const status = sub.headers.get("cf-cache-status") === "HIT" ? "HIT-EDGE" : "MISS";
-  return audio(buf, ct, status);
+  await c.env.TTS_CACHE.put(key, bytes, { httpMetadata: { contentType } });
+  return audio(bytes, contentType, "MISS");
 });
 
-async function callFal(input: { text: string; voice: string }, key: string) {
-  const res = await fetch(MODEL_URL, {
+async function callOpenRouter(input: { text: string; voice: string }, key: string) {
+  const res = await fetch(OPENROUTER_SPEECH_URL, {
     method: "POST",
-    headers: { authorization: `Key ${key}`, "content-type": "application/json" },
-    body: JSON.stringify(input),
+    headers: {
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      input: input.text,
+      voice: input.voice,
+      response_format: "pcm",
+    }),
   });
-  if (!res.ok) throw new HTTPError(502, `fal: ${res.status} ${await res.text()}`);
-  const json = (await res.json()) as { audio: { url: string; content_type?: string } };
-  const file = await fetch(json.audio.url);
-  if (!file.ok) throw new HTTPError(502, `fal audio fetch: ${file.status}`);
+
+  if (!res.ok) {
+    throw new HTTPError(502, `openrouter: ${res.status} ${await res.text()}`);
+  }
+
+  const contentType = res.headers.get("content-type");
+  const pcm = await res.arrayBuffer();
   return {
-    bytes: await file.arrayBuffer(),
-    contentType: json.audio.content_type ?? file.headers.get("content-type") ?? "audio/mpeg",
+    bytes: wavFromPcm(pcm, {
+      channels: audioParam(contentType, "channels") ?? 1,
+      sampleRate: audioParam(contentType, "rate") ?? 24000,
+      sampleWidth: 2,
+    }),
+    contentType: "audio/wav",
   };
+}
+
+function wavFromPcm(
+  pcm: ArrayBuffer,
+  format: { channels: number; sampleRate: number; sampleWidth: number },
+) {
+  const bytesPerSample = format.sampleWidth;
+  const dataSize = pcm.byteLength;
+  const wav = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(wav);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, format.channels, true);
+  view.setUint32(24, format.sampleRate, true);
+  view.setUint32(28, format.sampleRate * format.channels * bytesPerSample, true);
+  view.setUint16(32, format.channels * bytesPerSample, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+  new Uint8Array(wav, 44).set(new Uint8Array(pcm));
+
+  return wav;
+}
+
+function writeAscii(view: DataView, offset: number, value: string) {
+  for (let i = 0; i < value.length; i += 1) {
+    view.setUint8(offset + i, value.charCodeAt(i));
+  }
+}
+
+function audioParam(contentType: string | null, name: string) {
+  const param = contentType
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+
+  if (!param) return undefined;
+  const value = Number(param.split("=")[1]);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function audio(
@@ -65,7 +113,7 @@ function audio(
 ) {
   return new Response(body, {
     headers: {
-      "content-type": contentType ?? "audio/mpeg",
+      "content-type": contentType ?? "audio/wav",
       "cache-control": `public, max-age=${YEAR}${immutable ? ", immutable" : ""}`,
       "x-cache": cacheStatus,
     },

@@ -29,6 +29,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_WORKER_API_TOKEN }}
           secrets: |
-            FAL_API_KEY
+            OPENROUTER_API_KEY
         env:
-          FAL_API_KEY: ${{ secrets.FAL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
