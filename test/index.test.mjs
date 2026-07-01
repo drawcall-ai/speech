@@ -33,7 +33,13 @@ test("retries empty OpenRouter audio and caches only the valid WAV", async () =>
     assert.equal(fetches.length, 2);
     assert.equal(
       JSON.parse(fetches[0].init.body).input,
-      'TTS the following transcript exactly.\n\nTranscript: "hello"',
+      [
+        "TTS the following transcript.",
+        "Read normal words aloud exactly.",
+        "Interpret bracketed stage directions as delivery instructions at their positions, not spoken words.",
+        "",
+        'Transcript: "hello"',
+      ].join("\n"),
     );
 
     const body = Buffer.from(await res.arrayBuffer());
@@ -71,6 +77,8 @@ test("passes style separately from transcript", async () => {
       [
         "TTS the following transcript.",
         "Follow the style notes without reading the notes aloud.",
+        "Read normal words aloud exactly.",
+        "Interpret bracketed stage directions as delivery instructions at their positions, not spoken words.",
         "",
         "Style notes: Say warmly with a pause",
         "",

@@ -4,7 +4,7 @@ type Env = { TTS_CACHE: R2Bucket; OPENROUTER_API_KEY: string };
 
 const MODEL = "google/gemini-3.1-flash-tts-preview";
 const OPENROUTER_SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
-const CACHE_VERSION = 7;
+const CACHE_VERSION = 8;
 const OPENROUTER_ATTEMPTS = 3;
 const MAX_TEXT = 1000;
 const MAX_STYLE = 1000;
@@ -129,11 +129,21 @@ function hasAudioData(buffer: ArrayBuffer) {
 
 function speechInput(text: string, style: string | undefined) {
   const transcript = JSON.stringify(text);
-  if (!style) return `TTS the following transcript exactly.\n\nTranscript: ${transcript}`;
+  if (!style) {
+    return [
+      "TTS the following transcript.",
+      "Read normal words aloud exactly.",
+      "Interpret bracketed stage directions as delivery instructions at their positions, not spoken words.",
+      "",
+      `Transcript: ${transcript}`,
+    ].join("\n");
+  }
 
   return [
     "TTS the following transcript.",
     "Follow the style notes without reading the notes aloud.",
+    "Read normal words aloud exactly.",
+    "Interpret bracketed stage directions as delivery instructions at their positions, not spoken words.",
     "",
     `Style notes: ${style}`,
     "",

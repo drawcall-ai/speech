@@ -26,7 +26,7 @@ GET https://v1.speech.drawcall.ai/?text=Hello+world&voice=Zephyr
 
 Use `text`, `voice`, and `style` as the stable API shape. This follows the common TTS split: transcript text is separate from voice selection and delivery control. `style` is Drawcall Speech's public name for natural-language delivery instructions; it maps well to Gemini style prompts and Azure-style SSML naming without exposing model prompt mechanics.
 
-Keep the words to speak in `text`, and put delivery notes in `style` when the line needs tone, emotion, accent, pace, or pauses. Style is best-effort rather than sample-accurate timing; for exact timing, pre-generate and edit audio assets.
+Keep the words to speak in `text`, and put line-level delivery notes in `style` when the whole line needs tone, emotion, accent, pace, or pauses. Style is best-effort rather than sample-accurate timing; for exact timing, pre-generate and edit audio assets.
 
 Good style values:
 
@@ -34,10 +34,14 @@ Good style values:
 - `Read this as a spooky whisper, slowly, with a nervous laugh near the end.`
 - `Use a calm British narrator tone and leave a short pause between clauses.`
 
-Inline stage directions in `text` can also work for local moments such as `[whispers]`, `[sighs]`, `[laughs]`, `[excitedly]`, or `[very slow]`. Use them sparingly; broad direction belongs in `style` so it is not mistaken for dialogue.
+Inline stage directions in `text` are better for local changes at specific points. Use bracketed directions such as `[pause]`, `[long pause]`, `[whispers]`, `[shouting]`, `[happy]`, `[sad]`, `[laughs]`, or `[very slow]`. The service asks the model to treat bracketed directions as performance notes rather than spoken words, but this is still model-dependent. Put broad direction in `style`; put timed or local switches in `text`.
 
 ```text
 GET https://v1.speech.drawcall.ai/?text=Hello+from+Drawcall.+Now+we+continue.&voice=Puck&style=Say+warmly+and+excitedly,+with+a+long+dramatic+pause+after+the+first+sentence.
+```
+
+```text
+GET https://v1.speech.drawcall.ai/?text=[whispers]+I+found+it.+[long+pause]+[shouting]+Run+now!&voice=Puck&style=Start+tense,+then+turn+urgent.
 ```
 
 ## First Request Delay
