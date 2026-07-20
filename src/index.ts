@@ -10,6 +10,39 @@ const MAX_TEXT = 1000;
 const MAX_STYLE = 1000;
 const MAX_VOICE = 100;
 const DEFAULT_VOICE = "Zephyr";
+const VOICES = [
+  "Zephyr",
+  "Puck",
+  "Charon",
+  "Kore",
+  "Fenrir",
+  "Leda",
+  "Orus",
+  "Aoede",
+  "Callirrhoe",
+  "Autonoe",
+  "Enceladus",
+  "Iapetus",
+  "Umbriel",
+  "Algieba",
+  "Despina",
+  "Erinome",
+  "Algenib",
+  "Rasalgethi",
+  "Laomedeia",
+  "Achernar",
+  "Alnilam",
+  "Schedar",
+  "Gacrux",
+  "Pulcherrima",
+  "Achird",
+  "Zubenelgenubi",
+  "Vindemiatrix",
+  "Sadachbia",
+  "Sadaltager",
+  "Sulafat",
+] as const;
+const VOICE_BY_LOWERCASE = new Map(VOICES.map((voice) => [voice.toLowerCase(), voice]));
 const YEAR = 31536000;
 
 const app = new Hono<{ Bindings: Env }>();
@@ -18,7 +51,7 @@ app.get("/", async (c) => {
   const text = c.req.query("text")?.trim();
   const style = c.req.query("style")?.trim();
   const legacyPrompt = c.req.query("prompt")?.trim();
-  const voice = c.req.query("voice")?.trim() || DEFAULT_VOICE;
+  const requestedVoice = c.req.query("voice")?.trim() || DEFAULT_VOICE;
   if (!text) return c.text("missing ?text", 400);
   if (text.length > MAX_TEXT) return c.text(`text exceeds ${MAX_TEXT} chars`, 400);
   if (style && legacyPrompt && style !== legacyPrompt) {
@@ -29,7 +62,10 @@ app.get("/", async (c) => {
   if (speechStyle && speechStyle.length > MAX_STYLE) {
     return c.text(`style exceeds ${MAX_STYLE} chars`, 400);
   }
-  if (voice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
+  if (requestedVoice.length > MAX_VOICE) return c.text(`voice exceeds ${MAX_VOICE} chars`, 400);
+  // Generated apps sometimes use a character role ("Trail Guide") where the provider expects a
+  // fixed voice id. Falling back keeps narration available; delivery/persona belongs in `style`.
+  const voice = VOICE_BY_LOWERCASE.get(requestedVoice.toLowerCase()) ?? DEFAULT_VOICE;
 
   const key = await sha256Hex(
     JSON.stringify({ v: CACHE_VERSION, model: MODEL, style: speechStyle, text, voice }),

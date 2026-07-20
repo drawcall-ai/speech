@@ -18,6 +18,7 @@ GET https://v1.speech.drawcall.ai/?text=Hello+world&voice=Zephyr
 - `text`: required, URL-encoded, trimmed, max 1000 chars.
 - `style`: optional, URL-encoded, trimmed, max 1000 chars. Use it for delivery instructions such as tone, emotion, accent, pace, and pauses.
 - `voice`: optional, URL-encoded, defaults to `Zephyr`.
+- Unknown voice names also fall back to `Zephyr`; put character roles and delivery notes in `style`.
 - Response: audio file, usually `audio/wav`.
 - Cache: generated clips are cached by text, style, and voice; reuse identical URLs for repeatable playback.
 - Errors: plain text `400` for invalid input, `502` for generation failures.

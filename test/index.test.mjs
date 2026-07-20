@@ -115,6 +115,31 @@ test("accepts prompt as a legacy alias for style", async () => {
   }
 });
 
+test("falls back to the default provider voice for a character role", async () => {
+  const cache = new FakeR2Bucket();
+  const fetches = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, init) => {
+    fetches.push({ url, init });
+    return new Response(samplePcm(), {
+      headers: { "content-type": "audio/pcm;rate=24000;channels=1" },
+    });
+  };
+
+  try {
+    const res = await app.fetch(
+      new Request("https://example.test/?text=hello&voice=Trail%20Guide"),
+      { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(JSON.parse(fetches[0].init.body).voice, "Zephyr");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("rejects conflicting style and prompt params", async () => {
   const cache = new FakeR2Bucket();
   const res = await app.fetch(
