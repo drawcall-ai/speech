@@ -47,6 +47,8 @@ const YEAR = 31536000;
 
 const app = new Hono<{ Bindings: Env }>();
 
+app.get("/health", (c) => c.json({ status: "ok" }));
+
 app.get("/", async (c) => {
   const text = c.req.query("text")?.trim();
   const style = c.req.query("style")?.trim();
