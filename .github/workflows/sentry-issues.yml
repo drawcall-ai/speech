@@ -1,0 +1,28 @@
+name: Sentry errors
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sentry-error-issues
+  cancel-in-progress: false
+
+jobs:
+  create-issues:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: drawcallai
+      SENTRY_PROJECT: speech
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create GitHub issues for new Sentry errors
+        run: node .github/scripts/sentry-issues.mjs
