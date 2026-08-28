@@ -1,6 +1,11 @@
+import * as Sentry from "@sentry/cloudflare";
 import { Hono } from "hono";
 
-type Env = { TTS_CACHE: R2Bucket; OPENROUTER_API_KEY: string };
+type Env = {
+  TTS_CACHE: R2Bucket;
+  OPENROUTER_API_KEY: string;
+  SENTRY_DSN: string;
+};
 
 const MODEL = "google/gemini-3.1-flash-tts-preview";
 const OPENROUTER_SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
@@ -230,9 +235,19 @@ class HTTPError extends Error {
 }
 
 app.onError((err) => {
+  Sentry.captureException(err);
   if (err instanceof HTTPError) return new Response(err.message, { status: err.status });
   console.error("unhandled:", err);
   return new Response("internal error", { status: 500 });
 });
 
-export default app;
+export default Sentry.withSentry(
+  (env: Env) => ({
+    dsn: env.SENTRY_DSN,
+    environment: "production",
+    sendDefaultPii: false,
+    tracesSampleRate: 0,
+    initialScope: { tags: { runtime: "worker" } },
+  }),
+  app,
+);

@@ -2,7 +2,10 @@ name = "speech"
 account_id = "f9603af4549c04d25bdbbc04fd5ea112"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
-compatibility_flags = ["global_fetch_strictly_public"]
+compatibility_flags = ["global_fetch_strictly_public", "nodejs_compat"]
+
+[vars]
+SENTRY_DSN = "https://cecf96279b25773882958396a5562609@o4511014774767616.ingest.de.sentry.io/4511973786648656"
 
 [[routes]]
 pattern = "v1.speech.drawcall.ai/*"
