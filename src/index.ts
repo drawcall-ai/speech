@@ -111,7 +111,10 @@ async function callOpenRouter(
     });
 
     if (!res.ok) {
-      throw new HTTPError(502, `openrouter: ${res.status} ${await res.text()}`);
+      const message = `openrouter: ${res.status} ${await res.text()}`;
+      // OpenRouter also reports empty provider audio as an HTTP 502.
+      if (res.status === 502 && attempt < OPENROUTER_ATTEMPTS) continue;
+      throw new HTTPError(502, message);
     }
 
     const contentType = res.headers.get("content-type");
