@@ -67,6 +67,90 @@ for (const { name, url, status, message } of [
   });
 }
 
+const emptyStreamError = JSON.stringify({
+  error: {
+    message: "Provider returned an empty audio stream after returning HTTP 200",
+    code: 502,
+  },
+});
+
+test("recovers from an OpenRouter 502 and reuses only the valid cached WAV", async (t) => {
+  const cache = new FakeR2Bucket();
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    requests.push({ url, init });
+    assert.equal(cache.objects.size, 0);
+    if (requests.length === 1) {
+      return new Response(emptyStreamError, { status: 502 });
+    }
+    return new Response(samplePcm(), { headers: { "content-type": "audio/pcm" } });
+  });
+
+  const request = new Request("https://example.test/?text=hello&voice=Puck");
+  const env = { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache };
+  const res = await app.fetch(request, env);
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "audio/wav");
+  assert.equal(res.headers.get("x-cache"), "MISS");
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], requests[1]);
+  const wav = Buffer.from(await res.arrayBuffer());
+  assert.equal(wav.subarray(0, 4).toString("ascii"), "RIFF");
+  assert.deepEqual(wav.subarray(44), Buffer.from(samplePcm()));
+  assert.equal(cache.objects.size, 1);
+
+  const hit = await app.fetch(request, env);
+  assert.equal(hit.headers.get("x-cache"), "HIT-R2");
+  assert.deepEqual(Buffer.from(await hit.arrayBuffer()), wav);
+  assert.equal(requests.length, 2);
+});
+
+for (const statuses of [[502, 502, 502], [200, 502, 502], [502, 200, 200]]) {
+  test(`shares the retry limit across upstream responses ${statuses}`, async (t) => {
+    const cache = new FakeR2Bucket();
+    let attempts = 0;
+    t.mock.method(globalThis, "fetch", async () => {
+      const status = statuses[attempts++];
+      assert.ok(status, "must not exceed three attempts");
+      if (status === 502) {
+        return new Response(`${emptyStreamError} attempt ${attempts}`, { status });
+      }
+      return new Response(new ArrayBuffer(0), { headers: { "content-type": "audio/pcm" } });
+    });
+
+    const res = await app.fetch(
+      new Request("https://example.test/?text=hello"),
+      { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
+    );
+
+    assert.equal(res.status, 502);
+    assert.equal(attempts, 3);
+    assert.equal(await res.text(), statuses[2] === 502
+      ? `openrouter: 502 ${emptyStreamError} attempt 3`
+      : "openrouter: empty audio response");
+    assert.equal(cache.objects.size, 0);
+  });
+}
+
+for (const status of [400, 401, 403, 422]) {
+  test(`does not retry an OpenRouter ${status}`, async (t) => {
+    const cache = new FakeR2Bucket();
+    const upstream = t.mock.method(globalThis, "fetch", async () =>
+      new Response("request rejected", { status }));
+
+    const res = await app.fetch(
+      new Request("https://example.test/?text=hello"),
+      { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
+    );
+
+    assert.equal(res.status, 502);
+    assert.equal(await res.text(), `openrouter: ${status} request rejected`);
+    assert.equal(upstream.mock.callCount(), 1);
+    assert.equal(cache.objects.size, 0);
+  });
+}
+
 test("retries empty OpenRouter audio and caches only the valid WAV", async () => {
   const cache = new FakeR2Bucket();
   const fetches = [];
