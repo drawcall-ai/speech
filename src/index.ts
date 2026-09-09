@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/cloudflare";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 type Env = {
   TTS_CACHE: R2Bucket;
@@ -51,6 +52,8 @@ const VOICE_BY_LOWERCASE = new Map(VOICES.map((voice) => [voice.toLowerCase(), v
 const YEAR = 31536000;
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.use("*", cors({ origin: "*", allowMethods: ["GET", "HEAD", "OPTIONS"] }));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -209,12 +212,11 @@ function audio(
   body: BodyInit | null,
   contentType: string | undefined,
   cacheStatus: string,
-  immutable = true,
 ) {
   return new Response(body, {
     headers: {
       "content-type": contentType ?? "audio/wav",
-      "cache-control": `public, max-age=${YEAR}${immutable ? ", immutable" : ""}`,
+      "cache-control": `public, max-age=${YEAR}, immutable`,
       "x-cache": cacheStatus,
     },
   });

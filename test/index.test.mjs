@@ -3,6 +3,70 @@ import test from "node:test";
 
 import app from "../src/index.ts";
 
+const origin = "https://share.design.drawcallcontent.com";
+const speechUrl = `https://example.test/?${new URLSearchParams({
+  text: "[whispers] Homburg. [long pause] Eighteen forty-one.",
+  voice: "Puck",
+  style: "Hushed and close, like letting someone in on a secret",
+})}`;
+
+test("allows cross-origin audio on cache misses and hits", async (t) => {
+  const cache = new FakeR2Bucket();
+  const fetch = t.mock.method(globalThis, "fetch", async () =>
+    new Response(samplePcm(), {
+      headers: { "content-type": "audio/pcm;rate=24000;channels=1" },
+    }),
+  );
+
+  for (const cacheStatus of ["MISS", "HIT-R2"]) {
+    const res = await app.fetch(
+      new Request(speechUrl, { headers: { origin } }),
+      { OPENROUTER_API_KEY: "test-key", TTS_CACHE: cache },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.equal(res.headers.get("content-type"), "audio/wav");
+    assert.equal(res.headers.get("x-cache"), cacheStatus);
+    assert.equal(Buffer.from(await res.arrayBuffer()).subarray(0, 4).toString(), "RIFF");
+  }
+  assert.equal(fetch.mock.callCount(), 1);
+});
+
+test("answers CORS preflight without generating audio", async () => {
+  const res = await app.fetch(
+    new Request(speechUrl, {
+      method: "OPTIONS",
+      headers: {
+        origin,
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "range",
+      },
+    }),
+  );
+  assert.equal(res.status, 204);
+  assert.equal(res.headers.get("access-control-allow-origin"), "*");
+  assert.ok(res.headers.get("access-control-allow-methods").split(",").includes("GET"));
+  assert.equal(res.headers.get("access-control-allow-headers"), "range");
+});
+
+for (const { name, url, status, message } of [
+  { name: "validation", url: "https://example.test/", status: 400, message: "missing ?text" },
+  { name: "provider", url: speechUrl, status: 502, message: "openrouter: 503 unavailable" },
+]) {
+  test(`keeps ${name} errors readable across origins`, async (t) => {
+    t.mock.method(globalThis, "fetch", async () =>
+      new Response("unavailable", { status: 503 }),
+    );
+    const res = await app.fetch(
+      new Request(url, { headers: { origin } }),
+      { OPENROUTER_API_KEY: "test-key", TTS_CACHE: new FakeR2Bucket() },
+    );
+    assert.equal(res.status, status);
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.equal(await res.text(), message);
+  });
+}
+
 test("retries empty OpenRouter audio and caches only the valid WAV", async () => {
   const cache = new FakeR2Bucket();
   const fetches = [];
